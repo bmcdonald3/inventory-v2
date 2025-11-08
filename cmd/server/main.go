@@ -29,6 +29,8 @@ import (
 	// --- Blank imports to register resources ---
 	_ "github.com/user/inventory-api/pkg/resources/device"
 	_ "github.com/user/inventory-api/pkg/resources/discoverysnapshot"
+
+	"github.com/openchami/fabrica/pkg/resource"
 )
 
 // --- Global variables for handlers ---
@@ -211,6 +213,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 	RegisterGeneratedRoutes(r) // This is the Fabrica "server"
 	r.Get("/health", healthHandler)
 
+	r.Post("/discoverysnapshots", manualCreateSnapshotHandler)
+	log.Println("Overriding POST /discoverysnapshots with manual handler.")
+
 	r.Post("/debug-event", debugEventHandler)
 
 	// --- 7. Create and Start HTTP Server ---
@@ -250,6 +255,65 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	log.Println("Server exited")
 	return nil
+}
+
+func manualCreateSnapshotHandler(w http.ResponseWriter, r *http.Request) {
+	// 1. Decode the request body (this is what the user sends)
+	var req struct {
+		Name    string          `json:"name"`
+		RawData json.RawMessage `json:"rawData"`
+		Labels  map[string]string `json:"labels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Failed to decode request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 2. Create the full Snapshot resource object
+	snapshot := &discoverysnapshot.DiscoverySnapshot{
+		Resource: resource.Resource{
+			Metadata: resource.Metadata{
+				Name:   req.Name,
+				Labels: req.Labels,
+			},
+		},
+		Spec: discoverysnapshot.DiscoverySnapshotSpec{
+			RawData: req.RawData,
+		},
+	}
+	// The Save function will set the UID, timestamps, etc.
+
+	// 3. Save it to storage (using the function from your storage.go)
+	// We use globalStorage (set by SetStorageBackend) because handlers use it
+	if err := internal_storage.SaveDiscoverySnapshot(context.Background(), snapshot); err != nil {
+		http.Error(w, "Failed to save snapshot: "+err.Error(), 500)
+		return
+	}
+	log.Printf("MANUAL HANDLER: Saved new snapshot %s", snapshot.GetUID())
+
+	// 4. Publish the event (using the globalEventBus we know works)
+	event, err := events.NewResourceEvent(
+		"io.fabrica.discoverysnapshot.created", // Default event type
+		"DiscoverySnapshot",
+		snapshot.GetUID(),
+		snapshot,
+	)
+	if err != nil {
+		http.Error(w, "Saved, but failed to create event: "+err.Error(), 500)
+		return
+	}
+
+	if err := globalEventBus.Publish(context.Background(), *event); err != nil {
+		// Log the error but don't fail the request, since it did save
+		log.Printf("MANUAL HANDLER: Saved, but failed to publish event: %v", err)
+	} else {
+		log.Printf("MANUAL HANDLER: Event published for %s", snapshot.GetUID())
+	}
+
+	// 5. Send the response back
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(snapshot)
 }
 
 func debugEventHandler(w http.ResponseWriter, r *http.Request) {
