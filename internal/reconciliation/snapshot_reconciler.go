@@ -3,7 +3,7 @@ package reconciliation
 import (
 	"context"
 	"fmt"
-	"time" // We'll add this back for the stub
+	"time"
 
 	"github.com/openchami/fabrica/pkg/events"
 	"github.com/openchami/fabrica/pkg/reconcile"
@@ -16,8 +16,8 @@ import (
 // SnapshotReconciler reconciles a DiscoverySnapshot resource
 type SnapshotReconciler struct {
 	reconcile.BaseReconciler
-	client *storage.StorageClient // Correct type
-	logger reconcile.Logger       // Correct type
+	client *storage.StorageClient // Correct type from your storage.go
+	logger reconcile.Logger       // Correct type for the reconciler
 }
 
 // NewSnapshotReconciler creates a new reconciler
@@ -27,7 +27,7 @@ func NewSnapshotReconciler(eb events.EventBus, client *storage.StorageClient, lo
 			EventBus: eb,
 			Logger:   logger,
 		},
-		client: client, // Correct field
+		client: client,
 		logger: logger,
 	}
 }
@@ -39,6 +39,7 @@ func (r *SnapshotReconciler) GetResourceKind() string {
 
 // Reconcile is the core logic. The controller passes the resource object.
 func (r *SnapshotReconciler) Reconcile(ctx context.Context, resource interface{}) (reconcile.Result, error) {
+	r.logger.Infof("RECONCILER: Received resource, attempting cast. Actual type: %T", resource)
 	// 1. Cast the resource
 	snapshot, ok := resource.(*discoverysnapshot.DiscoverySnapshot)
 	if !ok {
@@ -47,7 +48,7 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, resource interface{}
 
 	// Only process if phase is not "Completed"
 	if snapshot.Status.Phase == "Completed" {
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, nil // Already done, no requeue.
 	}
 
 	r.logger.Infof("RECONCILER: Received request for DiscoverySnapshot %s", snapshot.GetName())
@@ -56,13 +57,12 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, resource interface{}
 	snapshot.Status.Phase = "Processing"
 	snapshot.Status.Message = "Reconciler has started processing the snapshot."
 	snapshot.Status.Ready = false
-	// Use the client's Update method to save changes
+	// Use the client's Update method to save status
 	if err := r.client.Update(ctx, snapshot); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to update snapshot status to Processing: %w", err)
 	}
 
 	// 3. --- STUB: Simulate work ---
-	// In Step 3, we will parse snapshot.Spec.RawData here.
 	r.logger.Infof("RECONCILER: 'Parsing' raw data for %s: %s", snapshot.GetName(), string(snapshot.Spec.RawData))
 	time.Sleep(2 * time.Second) // Simulate processing time
 	r.logger.Infof("RECONCILER: Processing complete for %s", snapshot.GetName())
@@ -72,7 +72,6 @@ func (r *SnapshotReconciler) Reconcile(ctx context.Context, resource interface{}
 	snapshot.Status.Phase = "Completed"
 	snapshot.Status.Message = "Snapshot processed successfully."
 	snapshot.Status.Ready = true // Mark as ready
-	// Use the client's Update method again
 	if err := r.client.Update(ctx, snapshot); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to update snapshot status to Completed: %w", err)
 	}
