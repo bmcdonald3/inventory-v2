@@ -21,11 +21,11 @@ type RedfishClient struct {
 // These are used for unmarshaling Redfish JSON
 
 // SystemInventory holds the discovered devices related to one System/Node.
-// It now holds the canonical DeviceStatus structs.
+// It now holds the canonical DeviceSpec structs.
 type SystemInventory struct {
-	NodeStatus *device.DeviceStatus
-	CPUs       []*device.DeviceStatus
-	DIMMs      []*device.DeviceStatus
+	NodeSpec *device.DeviceSpec
+	CPUs     []*device.DeviceSpec
+	DIMMs    []*device.DeviceSpec
 }
 
 // RedfishCollection defines the structure for Redfish collection responses.
