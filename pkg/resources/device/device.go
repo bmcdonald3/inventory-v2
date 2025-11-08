@@ -27,6 +27,7 @@ type DeviceSpec struct {
 	// ParentID holds the UID of the parent device.
 	// This will be populated by the reconciler.
 	ParentID string `json:"parentID,omitempty"`
+	ParentSerialNumber string `json:"parentSerialNumber,omitempty"`
 
 	// Properties is an arbitrary key-value map for non-standard attributes.
 	// We use json.RawMessage to store any valid JSON value.
