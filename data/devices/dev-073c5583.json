@@ -1,0 +1,1 @@
+{"apiVersion":"v1","kind":"Device","schemaVersion":"v1","metadata":{"name":"SN-NODE-001","uid":"dev-073c5583","createdAt":"2025-11-08T10:55:46.775761-08:00","updatedAt":"2025-11-08T10:56:01.000085-08:00"},"spec":{"deviceType":"Node","manufacturer":"NewVendor","serialNumber":"SN-NODE-001"},"status":{"ready":false}}

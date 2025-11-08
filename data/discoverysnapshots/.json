@@ -1,0 +1,1 @@
+{"apiVersion":"","kind":"","schemaVersion":"","metadata":{"name":"this-will-work","uid":"","createdAt":"0001-01-01T00:00:00Z","updatedAt":"0001-01-01T00:00:00Z"},"spec":{"rawData":{"message":"sent to the real, non-debug handler"}},"status":{"ready":false}}

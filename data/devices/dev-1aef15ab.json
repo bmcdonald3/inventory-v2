@@ -1,0 +1,1 @@
+{"apiVersion":"v1","kind":"Device","schemaVersion":"v1","metadata":{"name":"SN-CPU-001","uid":"dev-1aef15ab","createdAt":"2025-11-08T10:55:46.776831-08:00","updatedAt":"2025-11-08T10:55:46.776831-08:00"},"spec":{"deviceType":"CPU","serialNumber":"SN-CPU-001"},"status":{"ready":false}}
