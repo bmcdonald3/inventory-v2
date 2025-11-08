@@ -21,7 +21,7 @@ import (
 // (Config, CollectAndPost, NewRedfishClient, Get, and discoverDevices functions are unchanged)
 // ...
 // --- Main Orchestration Function ---
-const InventoryAPIHost = "http://localhost:8080"
+const InventoryAPIHost = "http://localhost:8081"
 const DefaultUsername = "root"
 const DefaultPassword = "initial0"
 
