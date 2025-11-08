@@ -258,10 +258,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 }
 
 func manualCreateSnapshotHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Decode the request body (this is what the user sends)
+	// 1. Decode the request body
 	var req struct {
-		Name    string          `json:"name"`
-		RawData json.RawMessage `json:"rawData"`
+		Name    string            `json:"name"`
+		RawData json.RawMessage   `json:"rawData"`
 		Labels  map[string]string `json:"labels"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -269,33 +269,47 @@ func manualCreateSnapshotHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Create the full Snapshot resource object
+	// 2. --- THIS IS THE FIX ---
+	// Manually initialize the resource based on your resource.go
 	snapshot := &discoverysnapshot.DiscoverySnapshot{
 		Resource: resource.Resource{
-			Metadata: resource.Metadata{
-				Name:   req.Name,
-				Labels: req.Labels,
-			},
+			APIVersion:    "v1",
+			Kind:          "DiscoverySnapshot", // Must match the registered Kind
+			SchemaVersion: "v1",
 		},
 		Spec: discoverysnapshot.DiscoverySnapshotSpec{
 			RawData: req.RawData,
 		},
 	}
-	// The Save function will set the UID, timestamps, etc.
 
-	// 3. Save it to storage (using the function from your storage.go)
-	// We use globalStorage (set by SetStorageBackend) because handlers use it
+	// 3. Generate a UID using the function from your resource.go
+	uid, err := resource.GenerateUIDForResource("DiscoverySnapshot")
+	if err != nil {
+		http.Error(w, "Failed to generate UID: "+err.Error(), 500)
+		return
+	}
+
+	// 4. Set the Metadata
+	now := time.Now()
+	snapshot.Metadata.UID = uid
+	snapshot.Metadata.Name = req.Name
+	snapshot.Metadata.Labels = req.Labels
+	snapshot.Metadata.CreatedAt = now
+	snapshot.Metadata.UpdatedAt = now
+	// --- END FIX ---
+
+	// 5. Save it to storage
 	if err := internal_storage.SaveDiscoverySnapshot(context.Background(), snapshot); err != nil {
 		http.Error(w, "Failed to save snapshot: "+err.Error(), 500)
 		return
 	}
 	log.Printf("MANUAL HANDLER: Saved new snapshot %s", snapshot.GetUID())
 
-	// 4. Publish the event (using the globalEventBus we know works)
+	// 6. Publish the event
 	event, err := events.NewResourceEvent(
-		"io.fabrica.discoverysnapshot.created", // Default event type
+		"io.fabrica.discoverysnapshot.created",
 		"DiscoverySnapshot",
-		snapshot.GetUID(),
+		snapshot.GetUID(), // This is now correctly populated
 		snapshot,
 	)
 	if err != nil {
@@ -304,13 +318,12 @@ func manualCreateSnapshotHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := globalEventBus.Publish(context.Background(), *event); err != nil {
-		// Log the error but don't fail the request, since it did save
 		log.Printf("MANUAL HANDLER: Saved, but failed to publish event: %v", err)
 	} else {
 		log.Printf("MANUAL HANDLER: Event published for %s", snapshot.GetUID())
 	}
 
-	// 5. Send the response back
+	// 7. Send the response back
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(snapshot)
