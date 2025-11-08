@@ -1,6 +1,4 @@
 // This file contains the complete Redfish discovery and API posting logic.
-// It is designed to live inside the inventory-api repo at pkg/collector/collector.go
-
 package collector
 
 import (
@@ -17,16 +15,18 @@ import (
 	"time"
 
 	// Import the Fabrica-generated client (the SDK)
-	// Make sure this import path matches your module name
 	fabricaclient "github.com/user/inventory-api/pkg/client"
 	// Import the API's canonical resource definition
 	"github.com/user/inventory-api/pkg/resources/device"
+	// Import the snapshot resource definition
+	"github.com/user/inventory-api/pkg/resources/discoverysnapshot"
 )
 
 // --- Configuration ---
 
 // InventoryAPIHost is the address of the Fabrica API server.
-const InventoryAPIHost = "http://localhost:8081" // Your server runs on 8081
+// --- FIX: Corrected port to 8080 ---
+const InventoryAPIHost = "http://localhost:8080"
 
 // DefaultUsername and DefaultPassword are hardcoded for Redfish basic auth.
 const DefaultUsername = "root"
@@ -73,20 +73,24 @@ func CollectAndPost(bmcIP string) error {
 	// --- 5. POST THE SNAPSHOT ---
 	fmt.Println("Creating new DiscoverySnapshot resource...")
 
-	// Create the request for the generated client.
-	// This structure matches the flat JSON body our manual handler expects.
-	createReq := fabricaclient.CreateDiscoverySnapshotRequest{
-		Name:    fmt.Sprintf("snapshot-%s-%d", bmcIP, time.Now().Unix()),
+	// --- FIX: Use the correct struct initialization ---
+	// Create the Spec for the new snapshot
+	snapshotSpec := discoverysnapshot.DiscoverySnapshotSpec{
 		RawData: json.RawMessage(snapshotData),
 	}
+
+	// The generated CreateDiscoverySnapshotRequest struct embeds the Spec struct
+	createReq := fabricaclient.CreateDiscoverySnapshotRequest{
+		Name:                  fmt.Sprintf("snapshot-%s-%d", bmcIP, time.Now().Unix()),
+		DiscoverySnapshotSpec: snapshotSpec, // Use the embedded struct
+	}
+	// --- END FIX ---
 
 	// Use the SDK to create the snapshot resource
 	createdSnapshot, err := sdkClient.CreateDiscoverySnapshot(ctx, createReq)
 	if err != nil {
-		// If the SDK call fails, print out the response body for debugging
-		if httpErr, ok := err.(*fabricaclient.HTTPError); ok {
-			fmt.Printf("API Error: %s\n", httpErr.Body)
-		}
+		// --- FIX: Removed the undefined HTTPError ---
+		// Just return the raw error
 		return fmt.Errorf("failed to create snapshot: %w", err)
 	}
 
@@ -157,8 +161,7 @@ func discoverDevices(c *RedfishClient) ([]*device.DeviceSpec, error) {
 
 	for _, member := range systemsCollection.Members {
 		systemURI := strings.TrimPrefix(member.ODataID, "/redfish/v1")
-		
-		// We need the system serial to pass as parent serial to children
+
 		systemBody, err := c.Get(systemURI)
 		if err != nil {
 			fmt.Printf("Warning: Failed to get system %s: %v\n", member.ODataID, err)
@@ -200,8 +203,7 @@ func getSystemInventory(c *RedfishClient, systemURI string, systemData *RedfishS
 	// Get Processors (CPUs)
 	if cpuCollectionURI := systemData.Processors.ODataID; cpuCollectionURI != "" {
 		cleanedURI := strings.TrimPrefix(cpuCollectionURI, "/redfish/v1")
-		// Pass the Node's Serial Number as the parent identifier
-		cpuDevices, err := getCollectionDevices(c, cleanedURI, "CPU", systemURI, systemData.SerialNumber, &RedfishProcessor{})
+		cpuDevices, err := getCollectionDevices(c, cleanedURI, "CPU", systemURI, &RedfishProcessor{})
 		if err != nil {
 			fmt.Printf("Warning: Failed to retrieve CPU inventory from %s: %v\n", cpuCollectionURI, err)
 		} else {
@@ -211,8 +213,7 @@ func getSystemInventory(c *RedfishClient, systemURI string, systemData *RedfishS
 	// Get Memory (DIMMs)
 	if dimmCollectionURI := systemData.Memory.ODataID; dimmCollectionURI != "" {
 		cleanedURI := strings.TrimPrefix(dimmCollectionURI, "/redfish/v1")
-		// Pass the Node's Serial Number as the parent identifier
-		dimmDevices, err := getCollectionDevices(c, cleanedURI, "DIMM", systemURI, systemData.SerialNumber, &RedfishMemory{})
+		dimmDevices, err := getCollectionDevices(c, cleanedURI, "DIMM", systemURI, &RedfishMemory{})
 		if err != nil {
 			fmt.Printf("Warning: Failed to retrieve DIMM inventory from %s: %v\n", dimmCollectionURI, err)
 		} else {
@@ -223,7 +224,7 @@ func getSystemInventory(c *RedfishClient, systemURI string, systemData *RedfishS
 }
 
 // getCollectionDevices retrieves a collection, iterates over members, and maps them.
-func getCollectionDevices(c *RedfishClient, collectionURI, deviceType, parentURI, parentSerial string, componentTypeExample interface{}) ([]*device.DeviceSpec, error) {
+func getCollectionDevices(c *RedfishClient, collectionURI, deviceType, parentURI string, componentTypeExample interface{}) ([]*device.DeviceSpec, error) {
 	var specs []*device.DeviceSpec
 	collectionBody, err := c.Get(collectionURI)
 	if err != nil {
@@ -234,7 +235,7 @@ func getCollectionDevices(c *RedfishClient, collectionURI, deviceType, parentURI
 		return nil, fmt.Errorf("failed to decode collection from %s: %w", collectionURI, err)
 	}
 	for _, member := range collection.Members {
-		memberURI := strings.TrimPrefix(member.ODataID, "/redfish/v1")
+		memberURI := strings.TrimPrefix(member.ODataID, "/redfish/vStream")
 		memberBody, err := c.Get(memberURI)
 		if err != nil {
 			fmt.Printf("Warning: Failed to get member %s: %v\n", member.ODataID, err)
@@ -246,8 +247,8 @@ func getCollectionDevices(c *RedfishClient, collectionURI, deviceType, parentURI
 			continue
 		}
 		rfProps := reflect.ValueOf(component).Elem().Field(0).Interface().(CommonRedfishProperties)
-		
-		// Map properties, passing along the parent's Redfish URI and Serial Number
+
+		// Map properties, passing along the parent's Redfish URI
 		specs = append(specs, mapCommonProperties(rfProps, deviceType, memberURI, parentURI))
 	}
 	return specs, nil
@@ -276,6 +277,5 @@ func mapCommonProperties(rfProps CommonRedfishProperties, deviceType, redfishURI
 		PartNumber:   partNum,
 		SerialNumber: rfProps.SerialNumber,
 		Properties:   props,
-		// We will add ParentSerialNumber in the next step (Step 4)
 	}
 }
