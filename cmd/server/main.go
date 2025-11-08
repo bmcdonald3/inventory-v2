@@ -177,14 +177,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 	SetEventBus(eventBus) // Set the global for handlers
 	log.Println("Event bus started.")
 
-	// --- 3. Initialize Reconciliation Controller --- (ADDED BACK)
-	// The controller needs the *raw backend*
-	controller := reconcile.NewController(eventBus, storageBackend)
-	log.Println("Reconciliation controller initialized.")
-
 	// --- 4. Register Reconcilers --- (ADDED BACK)
 	// The reconciler needs the *typed client* from your storage.go
 	apiStorageClient := internal_storage.NewStorageClient()
+	controller := reconcile.NewController(eventBus, storageBackend)
+	log.Println("Reconciliation controller initialized.")
 	snapshotReconciler := reconciliation.NewSnapshotReconciler(eventBus, apiStorageClient, reconLogger)
 	if err := controller.RegisterReconciler(snapshotReconciler); err != nil {
 		log.Fatalf("Failed to register reconciler: %v", err)
