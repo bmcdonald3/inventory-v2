@@ -3,32 +3,31 @@ package reconciliation
 import (
 	"context"
 	"fmt"
-	"log"
-	"time"
+	"time" // We'll add this back for the stub
 
 	"github.com/openchami/fabrica/pkg/events"
 	"github.com/openchami/fabrica/pkg/reconcile"
-	"github.com/openchami/fabrica/pkg/storage"
 
-	// Import your snapshot resource definition
+	// Use the full module path
+	"github.com/user/inventory-api/internal/storage"
 	"github.com/user/inventory-api/pkg/resources/discoverysnapshot"
 )
 
 // SnapshotReconciler reconciles a DiscoverySnapshot resource
 type SnapshotReconciler struct {
 	reconcile.BaseReconciler
-	store  storage.Storage
-	logger *log.Logger
+	client *storage.StorageClient // Correct type
+	logger reconcile.Logger       // Correct type
 }
 
 // NewSnapshotReconciler creates a new reconciler
-func NewSnapshotReconciler(eb events.EventBus, store storage.Storage, logger *log.Logger) *SnapshotReconciler {
+func NewSnapshotReconciler(eb events.EventBus, client *storage.StorageClient, logger reconcile.Logger) *SnapshotReconciler {
 	return &SnapshotReconciler{
 		BaseReconciler: reconcile.BaseReconciler{
 			EventBus: eb,
 			Logger:   logger,
 		},
-		store:  store,
+		client: client, // Correct field
 		logger: logger,
 	}
 }
@@ -38,50 +37,47 @@ func (r *SnapshotReconciler) GetResourceKind() string {
 	return "DiscoverySnapshot"
 }
 
-// Reconcile is the core logic. It's triggered when a DiscoverySnapshot is created or updated.
-func (r *SnapshotReconciler) Reconcile(ctx context.Context, req reconcile.ReconcileRequest) (reconcile.Result, error) {
-	r.logger.Printf("RECONCILER: Received request for DiscoverySnapshot %s", req.ResourceUID)
-
-	// 1. Load the resource
-	resource, err := r.store.Get(ctx, "DiscoverySnapshot", req.ResourceUID)
-	if err != nil {
-		if storage.IsNotFound(err) {
-			r.logger.Printf("RECONCILER: Snapshot %s already deleted. Ignoring.", req.ResourceUID)
-			return reconcile.Result{}, nil
-		}
-		return reconcile.Result{}, fmt.Errorf("failed to get snapshot: %w", err)
-	}
-
-	// Cast to our specific type
+// Reconcile is the core logic. The controller passes the resource object.
+func (r *SnapshotReconciler) Reconcile(ctx context.Context, resource interface{}) (reconcile.Result, error) {
+	// 1. Cast the resource
 	snapshot, ok := resource.(*discoverysnapshot.DiscoverySnapshot)
 	if !ok {
 		return reconcile.Result{}, fmt.Errorf("received resource is not a DiscoverySnapshot")
 	}
 
+	// Only process if phase is not "Completed"
+	if snapshot.Status.Phase == "Completed" {
+		return reconcile.Result{}, nil
+	}
+
+	r.logger.Infof("RECONCILER: Received request for DiscoverySnapshot %s", snapshot.GetName())
+
 	// 2. Set phase to "Processing"
 	snapshot.Status.Phase = "Processing"
 	snapshot.Status.Message = "Reconciler has started processing the snapshot."
 	snapshot.Status.Ready = false
-	if err := r.store.UpdateStatus(ctx, "DiscoverySnapshot", snapshot.GetUID(), snapshot); err != nil {
+	// Use the client's Update method to save changes
+	if err := r.client.Update(ctx, snapshot); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to update snapshot status to Processing: %w", err)
 	}
 
 	// 3. --- STUB: Simulate work ---
 	// In Step 3, we will parse snapshot.Spec.RawData here.
-	r.logger.Printf("RECONCILER: 'Parsing' raw data for %s: %s", snapshot.GetName(), string(snapshot.Spec.RawData))
+	r.logger.Infof("RECONCILER: 'Parsing' raw data for %s: %s", snapshot.GetName(), string(snapshot.Spec.RawData))
 	time.Sleep(2 * time.Second) // Simulate processing time
-	r.logger.Printf("RECONCILER: Processing complete for %s", snapshot.GetName())
+	r.logger.Infof("RECONCILER: Processing complete for %s", snapshot.GetName())
 	// --- End Stub ---
 
 	// 4. Set phase to "Completed"
 	snapshot.Status.Phase = "Completed"
 	snapshot.Status.Message = "Snapshot processed successfully."
 	snapshot.Status.Ready = true // Mark as ready
-	if err := r.store.UpdateStatus(ctx, "DiscoverySnapshot", snapshot.GetUID(), snapshot); err != nil {
+	// Use the client's Update method again
+	if err := r.client.Update(ctx, snapshot); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to update snapshot status to Completed: %w", err)
 	}
 
-	r.logger.Printf("RECONCILER: Successfully reconciled %s", snapshot.GetName())
+	r.logger.Infof("RECONCILER: Successfully reconciled %s", snapshot.GetName())
 
 	// We are done, no need to requeue
 	return reconcile.Result{}, nil
