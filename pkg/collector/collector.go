@@ -235,7 +235,11 @@ func getCollectionDevices(c *RedfishClient, collectionURI, deviceType, parentURI
 		return nil, fmt.Errorf("failed to decode collection from %s: %w", collectionURI, err)
 	}
 	for _, member := range collection.Members {
-		memberURI := strings.TrimPrefix(member.ODataID, "/redfish/vStream")
+		// --- THIS LINE IS FIXED ---
+		// It now correctly trims "/redfish/v1"
+		memberURI := strings.TrimPrefix(member.ODataID, "/redfish/v1") 
+		// --- END FIX ---
+
 		memberBody, err := c.Get(memberURI)
 		if err != nil {
 			fmt.Printf("Warning: Failed to get member %s: %v\n", member.ODataID, err)
