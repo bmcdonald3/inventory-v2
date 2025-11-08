@@ -1,0 +1,1 @@
+{"apiVersion":"v1","kind":"Device","schemaVersion":"v1","metadata":{"name":"SN12345","uid":"dev-3f24a216","createdAt":"2025-11-08T09:45:33.298124-08:00","updatedAt":"2025-11-08T09:45:33.298124-08:00"},"spec":{"deviceType":"Node","manufacturer":"Vendor Inc.","serialNumber":"SN12345"},"status":{"ready":false}}
